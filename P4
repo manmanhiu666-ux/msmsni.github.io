@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>詞語大師：筆墨傳奇</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Hanzi Writer -->
+    <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Noto+Sans+TC:wght@400;700&family=Zhi+Mang+Xing&display=swap" rel="stylesheet">
+
+    <style>
+        html, body {
+            height: 100%;
+            overflow-x: hidden;
+            overscroll-behavior: none; /* 防止 iOS 橡皮筋效果 */
+        }
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #fef3c7; /* Amber-50 */
+            touch-action: pan-x pan-y;
+        }
+        .calligraphy-font {
+            font-family: 'Zhi Mang Xing', cursive;
+        }
+        /* 米字格背景 */
+        .mizige {
+            background-color: white;
+            background-image: 
+                linear-gradient(45deg, transparent 49.5%, #fee2e2 49.5%, #fee2e2 50.5%, transparent 50.5%),
+                linear-gradient(-45deg, transparent 49.5%, #fee2e2 49.5%, #fee2e2 50.5%, transparent 50.5%),
+                linear-gradient(to right, transparent 49.5%, #ef4444 49.5%, #ef4444 50.5%, transparent 50.5%),
+                linear-gradient(to bottom, transparent 49.5%, #ef4444 49.5%, #ef4444 50.5%, transparent 50.5%);
+            background-size: 100% 100%;
+            border: 2px solid #b91c1c;
+            /* 關鍵修正：確保格子本身就不允許捲動 */
+            touch-action: none !important; 
+        }
+        
+        /* 雙重保險：寫字區強制禁止瀏覽器默認觸控行為 */
+        .writing-canvas-container canvas, 
+        .writing-canvas-container svg {
+            touch-action: none !important;
+        }
+
+        @keyframes bounce-in {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.05); opacity: 1; }
+            70% { transform: scale(0.9); }
+            100% { transform: scale(1); }
+        }
+        .animate-bounce-in {
+            animation: bounce-in 0.5s ease-out forwards;
+        }
+        
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // -----------------------
+        // 資料庫 (Vocabulary Data)
+        // -----------------------
+        const VOCAB_LIST = [
+            { id: 1, word: "高超", jyutping: "gou1 ciu1", meaning: "形容技術特別好。", english_meaning: "Superb skills.", sentence: "這位魔術師的變魔術技巧十分____。", tip: "注意「高」的上下結構。" },
+            { id: 2, word: "栩栩如生", jyutping: "heoi2 heoi2 jyu4 sang1", meaning: "形容藝術作品非常逼真。", english_meaning: "Lifelike; Vivid.", sentence: "畫家筆下的老虎____。", tip: "「栩」是木字旁。" },
+            { id: 3, word: "讚不絕口", jyutping: "zaan3 bat1 zyut6 hau2", meaning: "不停地稱讚。", english_meaning: "Full of praise.", sentence: "奶奶做的菜太好吃了，大家都____。", tip: "「讚」先寫言，再寫兩個先。" },
+            { id: 4, word: "受邀", jyutping: "sau6 jiu1", meaning: "接受邀請。", english_meaning: "Invited.", sentence: "他____參加這次的國際論壇。", tip: "「邀」裡面是「敫」。" },
+            { id: 5, word: "名揚四海", jyutping: "ming4 joeng4 sei3 hoi2", meaning: "名聲傳遍各地。", english_meaning: "World famous.", sentence: "這位鋼琴家已經____。", tip: "「揚」是提手旁。" },
+            { id: 6, word: "將信將疑", jyutping: "zoeng1 seon3 zoeng1 ji4", meaning: "有點相信，又有點懷疑。", english_meaning: "Half believing, half doubting.", sentence: "對於這則誇張的新聞，大家都____。", tip: "「疑」右邊是匕、矢、走。" },
+            { id: 7, word: "簇擁", jyutping: "cuk1 jung2", meaning: "許多人團團圍著。", english_meaning: "To crowd around.", sentence: "大明星被粉絲____著。", tip: "「簇」上竹下族。" },
+            { id: 8, word: "烏雲密佈", jyutping: "wu1 wan4 mat6 bou3", meaning: "黑雲佈滿天空。", english_meaning: "Dark clouds gathering.", sentence: "天空中____，要下雨了。", tip: "「烏」裡面沒有點。" }
+        ];
+
+        // -----------------------
+        // 單字練習格組件 (Responsive Sizing)
+        // -----------------------
+        const CharacterBox = ({ char, onScoreChange, resetSignal, onComplete }) => {
+            const boxRef = useRef(null);
+            const writerRef = useRef(null);
+            const [localScore, setLocalScore] = useState(100);
+            const [status, setStatus] = useState('ready'); 
+            const [boxSize, setBoxSize] = useState(150); // Default size
+
+            useEffect(() => {
+                const updateSize = () => {
+                    const width = window.innerWidth;
+                    if (width < 640) {
+                        // 手機版優化：
+                        // 計算邏輯：(螢幕寬度 - 兩側間距) / 一行想放幾個字
+                        // 這裡設為每行大約 3-4 個字，並限制最大最小值
+                        // 減去 40px 是為了留邊距
+                        const calculatedSize = Math.floor((width - 40) / 3.5);
+                        // 限制在 70px 到 100px 之間，確保不會太小看不見，也不會太大寫不了
+                        const finalSize = Math.min(Math.max(calculatedSize, 70), 90);
+                        setBoxSize(finalSize); 
+                    } else {
+                        setBoxSize(150);
+                    }
+                };
+
+                updateSize(); 
+                window.addEventListener('resize', updateSize); 
+                return () => window.removeEventListener('resize', updateSize);
+            }, []);
+
+            useEffect(() => {
+                if (boxRef.current && window.HanziWriter) {
+                    boxRef.current.innerHTML = "";
+                    setLocalScore(100);
+                    setStatus('ready');
+
+                    try {
+                        writerRef.current = HanziWriter.create(boxRef.current, char, {
+                            width: boxSize,  
+                            height: boxSize,
+                            padding: 3, // 手機版 padding 縮小
+                            showOutline: true,
+                            showCharacter: false, 
+                            showHintAfterMisses: 3, 
+                            strokeColor: '#1e3a8a', 
+                            outlineColor: '#d1d5db', 
+                            highlightColor: '#10b981', 
+                        });
+                        startQuiz();
+                    } catch (e) {
+                        console.error("HanziWriter error:", e);
+                        if (onComplete) onComplete();
+                    }
+                }
+            }, [char, resetSignal, boxSize]);
+
+            const startQuiz = () => {
+                if (!writerRef.current) return;
+                setStatus('writing');
+                writerRef.current.quiz({
+                    onMistake: function() {
+                        setLocalScore(prev => {
+                            const newScore = Math.max(0, prev - 10);
+                            onScoreChange(char, newScore);
+                            return newScore; 
+                        });
+                    },
+                    onComplete: function() {
+                        setStatus('complete');
+                        if (onComplete) onComplete();
+                    }
+                });
+            };
+
+            return (
+                <div className="flex flex-col items-center m-1">
+                    <div className="relative shadow-md group">
+                        <div 
+                            className="mizige relative overflow-hidden rounded-md bg-white cursor-crosshair writing-canvas-container"
+                            style={{ width: `${boxSize}px`, height: `${boxSize}px` }}
+                        >
+                            <div ref={boxRef} className="absolute inset-0 w-full h-full flex justify-center items-center svg-container"></div>
+                            {status === 'complete' && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none animate-bounce-in z-20">
+                                    <div className="border-2 border-red-500 rounded-full flex items-center justify-center transform -rotate-12 bg-white/30 backdrop-blur-sm"
+                                         style={{ width: `${boxSize * 0.7}px`, height: `${boxSize * 0.7}px` }}>
+                                        <div className="text-center">
+                                            <span className="block text-red-600 font-bold font-serif" style={{ fontSize: `${boxSize * 0.3}px` }}>{localScore}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // -----------------------
+        // 寫字練習區塊
+        // -----------------------
+        const WordPractice = ({ wordData, onWordComplete }) => {
+            const chars = wordData.word.split('');
+            const [resetSignal, setResetSignal] = useState(0);
+            const [scores, setScores] = useState({});
+            const [completedIndices, setCompletedIndices] = useState(new Set());
+
+            const handleScoreChangeIndexed = (index, score) => {
+                setScores(prev => ({ ...prev, [index]: score }));
+            };
+
+            const handleCharComplete = (index) => {
+                setCompletedIndices(prev => {
+                    const newSet = new Set(prev);
+                    newSet.add(index);
+                    if (newSet.size === chars.length) {
+                        onWordComplete(true);
+                    }
+                    return newSet;
+                });
+            };
+
+            const calculateAverage = () => {
+                const total = Object.values(scores).reduce((a, b) => a + b, 0);
+                const count = chars.length;
+                return count === 0 ? 0 : Math.round(total / count);
+            };
+
+            useEffect(() => {
+                const initialScores = {};
+                chars.forEach((_, index) => { initialScores[index] = 100; });
+                setScores(initialScores);
+                setCompletedIndices(new Set());
+            }, [wordData]);
+
+            return (
+                <div className="flex flex-col items-center w-full">
+                    {/* 分數條 */}
+                    <div className="w-full flex justify-between items-center bg-amber-100/50 px-4 py-2 rounded-lg mb-2">
+                         <span className="text-xs text-gray-500 font-bold">總分</span>
+                         <span className="text-xl font-bold text-amber-700 font-mono">{calculateAverage()}</span>
+                    </div>
+
+                    {/* 練習格區域 */}
+                    <div className="flex flex-wrap justify-center gap-1 md:gap-2 mb-2 w-full">
+                        {chars.map((char, index) => (
+                            <CharacterBox 
+                                key={`${wordData.id}-${index}-${char}`} 
+                                char={char}
+                                resetSignal={resetSignal}
+                                onScoreChange={(c, s) => handleScoreChangeIndexed(index, s)}
+                                onComplete={() => handleCharComplete(index)}
+                            />
+                        ))}
+                    </div>
+
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => {
+                                setResetSignal(prev => prev + 1);
+                                const initialScores = {};
+                                chars.forEach((_, index) => { initialScores[index] = 100; });
+                                setScores(initialScores);
+                                setCompletedIndices(new Set());
+                                onWordComplete(false); 
+                            }}
+                            className="px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 text-sm font-bold transition shadow-sm"
+                        >
+                            重寫 (Reset)
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // -----------------------
+        // 主應用程式
+        // -----------------------
+        const App = () => {
+            const [playerName, setPlayerName] = useState('');
+            const [inputName, setInputName] = useState('');
+            const [mode, setMode] = useState('menu'); 
+            const [currentIndex, setCurrentIndex] = useState(0);
+            const [score, setScore] = useState(0);
+            const [showResult, setShowResult] = useState(false);
+            const [feedback, setFeedback] = useState(null); 
+            const [quizOptions, setQuizOptions] = useState([]);
+            const [canProceed, setCanProceed] = useState(false);
+            const [audioSpeed, setAudioSpeed] = useState(1); 
+            const [isSpeaking, setIsSpeaking] = useState(false);
+
+            const shuffleArray = (array) => [...array].sort(() => Math.random() - 0.5);
+
+            const startStudy = () => { setMode('study'); setCurrentIndex(0); setCanProceed(false); };
+            const startQuiz = () => { setMode('quiz'); setScore(0); setCurrentIndex(0); setShowResult(false); prepareQuizRound(0); };
+            const handleNameSubmit = (e) => { e.preventDefault(); if (inputName.trim()) setPlayerName(inputName.trim()); };
+
+            const prepareQuizRound = (index) => {
+                if (index >= VOCAB_LIST.length) { setShowResult(true); return; }
+                const correctWord = VOCAB_LIST[index];
+                let options = VOCAB_LIST.filter(v => v.id !== correctWord.id);
+                options = shuffleArray(options).slice(0, 3);
+                options.push(correctWord);
+                setQuizOptions(shuffleArray(options));
+            };
+
+            const handleQuizAnswer = (selectedWord) => {
+                const currentWord = VOCAB_LIST[currentIndex];
+                if (selectedWord.id === currentWord.id) {
+                    setScore(score + 10);
+                    setFeedback('correct');
+                } else {
+                    setFeedback('wrong');
+                }
+                setTimeout(() => {
+                    setFeedback(null);
+                    const nextIndex = currentIndex + 1;
+                    setCurrentIndex(nextIndex);
+                    prepareQuizRound(nextIndex);
+                }, 1000);
+            };
+
+            const playCantonese = (text) => {
+                if (!window.speechSynthesis) return;
+                window.speechSynthesis.cancel();
+                setIsSpeaking(true);
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'zh-HK'; 
+                utterance.rate = audioSpeed; 
+                const voices = window.speechSynthesis.getVoices();
+                const cantoneseVoice = voices.find(v => v.lang === 'zh-HK' || v.name.includes('Cantonese'));
+                if (cantoneseVoice) utterance.voice = cantoneseVoice;
+                utterance.onend = () => setIsSpeaking(false);
+                window.speechSynthesis.speak(utterance);
+            };
+
+            useEffect(() => { if (window.speechSynthesis) window.speechSynthesis.getVoices(); }, []);
+
+            // 0. 歡迎登入頁
+            if (!playerName) {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-amber-50">
+                        <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-sm border-2 border-amber-200">
+                            <h1 className="text-4xl text-amber-900 calligraphy-font text-center mb-4">詞語大師</h1>
+                            <form onSubmit={handleNameSubmit} className="space-y-4">
+                                <input type="text" value={inputName} onChange={(e) => setInputName(e.target.value)} placeholder="輸入你的名字" className="w-full px-4 py-3 text-lg rounded-xl border-2 border-amber-200 focus:outline-none bg-amber-50 text-center" required />
+                                <button type="submit" className="w-full bg-amber-500 text-white text-xl py-3 rounded-xl font-bold shadow-md active:scale-95">開始遊戲</button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 1. 選單介面
+            if (mode === 'menu') {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-amber-50">
+                        <div className="text-center w-full max-w-md">
+                            <h1 className="text-5xl text-amber-900 calligraphy-font mb-2">詞語大師</h1>
+                            <p className="text-xl text-amber-600 font-bold mb-8">你好，{playerName}</p>
+                            <div className="space-y-4">
+                                <button onClick={startStudy} className="w-full bg-emerald-500 text-white text-xl py-4 rounded-xl shadow-lg active:scale-95 font-bold flex items-center justify-center gap-2">
+                                    寫字道場 <span className="text-sm opacity-70">(Writing)</span>
+                                </button>
+                                <button onClick={startQuiz} className="w-full bg-orange-500 text-white text-xl py-4 rounded-xl shadow-lg active:scale-95 font-bold flex items-center justify-center gap-2">
+                                    詞義挑戰 <span className="text-sm opacity-70">(Quiz)</span>
+                                </button>
+                            </div>
+                            <button onClick={() => setPlayerName('')} className="text-sm text-amber-800/60 underline mt-8">登出</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 2. 寫字練習模式 (iPad 優化版面)
+            if (mode === 'study') {
+                const wordData = VOCAB_LIST[currentIndex];
+                return (
+                    <div className="h-screen flex flex-col bg-amber-50 overflow-hidden">
+                        {/* 頂部導航 */}
+                        <div className="flex justify-between items-center px-4 py-2 bg-white shadow-sm shrink-0 z-10">
+                            <button onClick={() => setMode('menu')} className="text-gray-500 font-bold text-sm">
+                                退出
+                            </button>
+                            <span className="text-lg font-bold text-amber-800">
+                                {currentIndex + 1} / {VOCAB_LIST.length}
+                            </span>
+                            <div className="w-8"></div>
+                        </div>
+
+                        {/* 主要內容區 - 可滾動但隱藏滾動條 */}
+                        <div className="flex-1 overflow-y-auto p-2 pb-24">
+                            <div className="max-w-3xl mx-auto bg-white rounded-2xl shadow-lg p-3 md:p-4">
+                                <div className="flex flex-col md:flex-row gap-4">
+                                    {/* 左側資訊 */}
+                                    <div className="w-full md:w-1/3 flex flex-col gap-2">
+                                        <div className="flex items-center justify-between md:justify-start gap-3">
+                                            <h2 className="text-3xl md:text-4xl font-bold text-gray-800">{wordData.word}</h2>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => playCantonese(wordData.word)} className={`p-2 rounded-full ${isSpeaking ? 'bg-amber-400' : 'bg-amber-100'}`}>
+                                                    🔊
+                                                </button>
+                                                <button onClick={() => setAudioSpeed(audioSpeed === 1 ? 0.5 : 1)} className="px-2 py-1 text-xs bg-gray-100 rounded border border-gray-300">
+                                                    {audioSpeed === 1 ? '正常' : '慢速'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="text-sm font-bold text-amber-700 bg-amber-50 px-2 py-1 rounded w-fit">粵: {wordData.jyutping}</div>
+                                        <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded border border-gray-100">
+                                            <span className="font-bold block text-xs text-gray-400 uppercase">Meaning</span>
+                                            {wordData.meaning}
+                                        </div>
+                                        <div className="text-sm text-indigo-600 bg-indigo-50 p-2 rounded border border-indigo-100">
+                                            <span className="font-bold block text-xs text-indigo-300 uppercase">English</span>
+                                            {wordData.english_meaning}
+                                        </div>
+                                    </div>
+
+                                    {/* 右側寫字區 */}
+                                    <div className="w-full md:w-2/3 border-t md:border-t-0 md:border-l border-gray-100 pt-4 md:pt-0 md:pl-4">
+                                        <WordPractice wordData={wordData} onWordComplete={setCanProceed} key={wordData.id} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 底部按鈕區 (固定在底部) */}
+                        <div className="shrink-0 p-3 bg-white border-t border-gray-200 flex justify-between items-center gap-4 z-20">
+                            <button onClick={() => setCurrentIndex(Math.max(0, currentIndex - 1))} disabled={currentIndex === 0} className={`px-4 py-3 rounded-xl font-bold text-sm ${currentIndex === 0 ? 'bg-gray-100 text-gray-300' : 'bg-gray-200 text-gray-600'}`}>
+                                上一個
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    if (currentIndex < VOCAB_LIST.length - 1) {
+                                        setCurrentIndex(currentIndex + 1);
+                                        setCanProceed(false);
+                                    } else {
+                                        setMode('menu');
+                                    }
+                                }}
+                                disabled={!canProceed}
+                                className={`flex-1 py-3 rounded-xl font-bold shadow-md transition text-lg flex justify-center items-center gap-2 ${canProceed ? 'bg-amber-600 text-white active:scale-95' : 'bg-gray-300 text-gray-500'}`}
+                            >
+                                {!canProceed && "🔒 "}
+                                {currentIndex === VOCAB_LIST.length - 1 ? '完成練習' : '下一個'}
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 3. 測驗模式
+            if (mode === 'quiz') {
+                if (showResult) {
+                    return (
+                        <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-amber-50">
+                            <div className="bg-white p-8 rounded-3xl shadow-xl text-center w-full max-w-sm border-4 border-amber-200">
+                                <h2 className="text-2xl font-bold text-gray-800 mb-2">挑戰完成！</h2>
+                                <p className="text-lg text-amber-600 font-bold mb-4">{playerName}</p>
+                                <div className="text-5xl font-bold text-amber-600 mb-6">{score} 分</div>
+                                <button onClick={() => setMode('menu')} className="w-full bg-amber-500 text-white text-xl py-3 rounded-xl font-bold shadow-lg">主選單</button>
+                            </div>
+                        </div>
+                    );
+                }
+
+                const currentWord = VOCAB_LIST[currentIndex];
+                return (
+                    <div className="h-screen flex flex-col bg-amber-50">
+                        <div className="flex justify-between items-center px-4 py-2 bg-white shadow-sm">
+                            <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-sm font-bold">Q {currentIndex + 1}</span>
+                            <span className="font-bold text-gray-700">Score: {score}</span>
+                        </div>
+                        <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-y-auto">
+                            <div className="w-full max-w-md bg-white rounded-2xl shadow-lg p-6">
+                                <h3 className="text-xl text-gray-800 leading-loose mb-4 text-center">
+                                    {currentWord.sentence.split('____').map((part, i) => (
+                                        <span key={i}>{part}{i === 0 && <span className="inline-block w-16 border-b-2 border-orange-400 mx-1 text-transparent">?</span>}</span>
+                                    ))}
+                                </h3>
+                                <div className="grid grid-cols-1 gap-3">
+                                    {quizOptions.map((option) => (
+                                        <button key={option.id} onClick={() => !feedback && handleQuizAnswer(option)} disabled={!!feedback} className={`p-4 text-lg font-bold rounded-xl border-2 transition ${feedback ? (option.id === currentWord.id ? 'bg-green-500 border-green-500 text-white' : 'bg-gray-100 text-gray-400') : 'bg-white border-amber-200 text-gray-700 hover:border-amber-400'}`}>
+                                            {option.word}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+            return null;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
