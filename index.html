@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>詞語大師：筆墨傳奇</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Hanzi Writer -->
+    <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
+    
+    <style>
+        /* =========================================
+           自訂字體設定
+           ========================================= */
+        @font-face {
+            font-family: 'HKKai';
+            src: url('./Free-HK-Kai_4700-v1.02.ttf') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        html, body {
+            height: 100%;
+            overflow-x: hidden;
+            overscroll-behavior: none;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            /* 背景圖片設定更新為 chii.png */
+            background-image: url('./chii.png');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            
+            font-family: 'HKKai', 'KaiTi', 'BiauKai', serif;
+            touch-action: pan-x pan-y;
+        }
+
+        button, input, select, textarea {
+            font-family: 'HKKai', 'KaiTi', 'BiauKai', serif !important;
+        }
+
+        .calligraphy-font {
+            font-family: 'HKKai', cursive;
+        }
+
+        .mizige {
+            background-color: white;
+            background-image: 
+                linear-gradient(45deg, transparent 49.5%, #fee2e2 49.5%, #fee2e2 50.5%, transparent 50.5%),
+                linear-gradient(-45deg, transparent 49.5%, #fee2e2 49.5%, #fee2e2 50.5%, transparent 50.5%),
+                linear-gradient(to right, transparent 49.5%, #ef4444 49.5%, #ef4444 50.5%, transparent 50.5%),
+                linear-gradient(to bottom, transparent 49.5%, #ef4444 49.5%, #ef4444 50.5%, transparent 50.5%);
+            background-size: 100% 100%;
+            border: 2px solid #b91c1c;
+            touch-action: none !important; 
+        }
+
+        .writing-canvas-container canvas, 
+        .writing-canvas-container svg {
+            touch-action: none !important;
+        }
+
+        /* 扣分動畫特效 */
+        @keyframes floatUpFade {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            50% { transform: translateY(-15px) scale(1.2); }
+            100% { opacity: 0; transform: translateY(-30px) scale(1); }
+        }
+
+        .deduction-feedback {
+            animation: floatUpFade 0.8s ease-out forwards;
+            color: #ef4444;
+            font-weight: 900;
+            font-size: 3rem; 
+            position: absolute;
+            top: 0px;
+            right: 0px;
+            pointer-events: none;
+            z-index: 50;
+            text-shadow: 3px 3px 0px white;
+            font-family: sans-serif;
+        }
+
+        @keyframes bounce-in {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.05); opacity: 1; }
+            70% { transform: scale(0.9); }
+            100% { transform: scale(1); }
+        }
+        .animate-bounce-in {
+            animation: bounce-in 0.5s ease-out forwards;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(4px);
+        }
+        ::-webkit-scrollbar {
+            width: 0px;
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+    <div id="root" class="h-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // ==========================================
+        // 老師設定區
+        // ==========================================
+        const UNIT_DATA = [
+            {
+                id: 9,
+                title: "第九課",
+                subtitle: "望梅止渴",
+                description: "學習第九課重點詞語",
+                words: [
+                    { id: 901, word: "攻打", emoji: "⚔️", jyutping: "gung1 daa2", meaning: "軍事上的進攻。", english_meaning: "To attack (militarily).", sentence: "軍隊準備____敵人的城堡。", tip: "「攻」左邊是工，右邊是攴(攵)。" },
+                    { id: 902, word: "飛揚", emoji: "🚩", jyutping: "fei1 joeng4", meaning: "高高飄舞。", english_meaning: "To flutter; To fly upward.", sentence: "鮮豔的旗幟在風中____。", tip: "「揚」是提手旁。" },
+                    { id: 903, word: "烈日當空", emoji: "☀️", jyutping: "lit6 jat6 dong1 hung1", meaning: "炎熱的太陽高掛天空。", english_meaning: "Scorching sun high in the sky.", sentence: "____的中午，大家都躲在樹蔭下。", tip: "「烈」下面是四點火。" },
+                    { id: 904, word: "口乾舌燥", emoji: "🥵", jyutping: "hau2 gon1 sit6 cou3", meaning: "形容非常口渴。", english_meaning: "Dry mouth and parched tongue.", sentence: "他在沙漠走了很久，感到____。", tip: "「燥」是火字旁，形容乾燥。" },
+                    { id: 905, word: "消沉", emoji: "😞", jyutping: "siu1 cam4", meaning: "情緒低落。", english_meaning: "Depressed; Low-spirited.", sentence: "失敗並沒有讓他意志____，反而更努力。", tip: "「沉」是三點水。" },
+                    { id: 906, word: "激勵", emoji: "💪", jyutping: "gik1 lai6", meaning: "激發鼓勵。", english_meaning: "To encourage; To inspire.", sentence: "老師的話深深____了我們。", tip: "「勵」右邊是力。" },
+                    { id: 907, word: "濕潤", emoji: "💧", jyutping: "sap1 jeon6", meaning: "潮濕而潤澤。", english_meaning: "Moist.", sentence: "雨後的空氣特別____清新。", tip: "兩個字都是三點水。" },
+                    { id: 908, word: "精神抖擻", emoji: "🦁", jyutping: "zing1 san4 dau2 sau2", meaning: "精神飽滿，充滿活力。", english_meaning: "Spirited; Vigorous.", sentence: "運動員個個____地步入會場。", tip: "「抖」和「擻」都是提手旁。" }
+                ]
+            },
+            {
+                id: 10,
+                title: "第十課",
+                subtitle: "待更新",
+                description: "課程內容即將推出",
+                words: [] 
+            }
+        ];
+
+        // -----------------------
+        // 組件：筆順演示視窗
+        // -----------------------
+        const StrokeOrderDemoModal = ({ word, onClose }) => {
+            const containerRef = useRef(null);
+            const writersRef = useRef([]);
+
+            useEffect(() => {
+                if (containerRef.current && window.HanziWriter) {
+                    containerRef.current.innerHTML = "";
+                    writersRef.current = [];
+                    const chars = word.split('');
+                    
+                    chars.forEach((char) => {
+                        const div = document.createElement('div');
+                        div.className = "mizige rounded-lg bg-white inline-block m-1 shadow-md";
+                        const size = window.innerWidth < 640 ? 80 : 150;
+                        div.style.width = `${size}px`;
+                        div.style.height = `${size}px`;
+                        
+                        containerRef.current.appendChild(div);
+
+                        const writer = HanziWriter.create(div, char, {
+                            width: size,
+                            height: size,
+                            padding: 5,
+                            showOutline: true,
+                            strokeAnimationSpeed: 1, 
+                            delayBetweenStrokes: 200,
+                            strokeColor: '#1e3a8a',
+                            fontFamily: 'HKKai',
+                        });
+                        writersRef.current.push(writer);
+                    });
+                }
+            }, [word]);
+
+            const playAnimation = () => {
+                if (writersRef.current.length === 0) return;
+                let promiseChain = Promise.resolve();
+                writersRef.current.forEach(writer => { promiseChain = promiseChain.then(() => writer.animateCharacter()); });
+            };
+
+            return (
+                <div className="fixed inset-0 modal-backdrop z-50 flex items-center justify-center p-4 fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full p-6 border-4 border-amber-200 relative overflow-hidden">
+                        <div className="text-center mb-6">
+                            <h3 className="text-3xl font-bold text-amber-900 mb-2">👁️ 筆順演示</h3>
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-lg font-bold">
+                                ⚠️ 注意：關閉此視窗後，無法再次觀看筆順！
+                            </div>
+                        </div>
+
+                        <div ref={containerRef} className="flex flex-wrap justify-center mb-8 gap-2 min-h-[100px]"></div>
+
+                        <div className="flex flex-col md:flex-row gap-4 justify-center">
+                            <button onClick={playAnimation} className="flex items-center justify-center gap-2 px-8 py-4 bg-gray-100 text-gray-600 rounded-2xl text-xl font-bold transition hover:bg-gray-200">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                播放 (Play)
+                            </button>
+                            <button onClick={onClose} className="flex items-center justify-center gap-2 px-10 py-4 bg-amber-500 text-white rounded-2xl text-xl font-bold shadow-lg transform transition hover:scale-105">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                我記住了，開始書寫！
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // -----------------------
+        // 單字練習格組件
+        // -----------------------
+        const CharacterBox = ({ char, onScoreChange, onComplete }) => {
+            const boxRef = useRef(null);
+            const writerRef = useRef(null);
+            const [localScore, setLocalScore] = useState(100);
+            const [status, setStatus] = useState('ready'); 
+            const [boxSize, setBoxSize] = useState(200); 
+            const [deductions, setDeductions] = useState([]); 
+
+            useEffect(() => {
+                const updateSize = () => {
+                    const width = window.innerWidth;
+                    if (width < 640) {
+                        const calculatedSize = Math.floor((width - 16) / 4);
+                        setBoxSize(Math.max(calculatedSize, 70)); 
+                    } else {
+                        // 電腦/平板版：設定為 220px
+                        setBoxSize(220);
+                    }
+                };
+                updateSize(); 
+                window.addEventListener('resize', updateSize); 
+                return () => window.removeEventListener('resize', updateSize);
+            }, []);
+
+            useEffect(() => {
+                if (boxRef.current && window.HanziWriter) {
+                    boxRef.current.innerHTML = "";
+                    setLocalScore(100);
+                    setStatus('ready');
+                    try {
+                        writerRef.current = HanziWriter.create(boxRef.current, char, {
+                            width: boxSize, height: boxSize, padding: 3, showOutline: true, showCharacter: false, showHintAfterMisses: 3, 
+                            strokeColor: '#1e3a8a', outlineColor: '#d1d5db', highlightColor: '#10b981', fontFamily: 'HKKai',
+                        });
+                        startQuiz();
+                    } catch (e) { if (onComplete) onComplete(); }
+                }
+            }, [char, boxSize]);
+
+            const startQuiz = () => {
+                if (!writerRef.current) return;
+                setStatus('writing');
+                writerRef.current.quiz({
+                    onMistake: () => {
+                        setLocalScore(p => { 
+                            const n = Math.max(0, p - 10); 
+                            onScoreChange(char, n); 
+                            return n; 
+                        });
+                        const id = Date.now();
+                        setDeductions(prev => [...prev, { id }]);
+                        setTimeout(() => {
+                            setDeductions(prev => prev.filter(d => d.id !== id));
+                        }, 1000);
+                    },
+                    onComplete: () => {
+                        setStatus('scoring');
+                        setTimeout(() => {
+                            setStatus('show_char');
+                            if(writerRef.current) writerRef.current.showCharacter({ animation: false }); 
+                        }, 3000); 
+                        if (onComplete) onComplete();
+                    }
+                });
+            };
+
+            return (
+                <div className="flex flex-col items-center">
+                    <div className="relative shadow-md group">
+                        {deductions.map(d => (
+                            <div key={d.id} className="deduction-feedback" style={{ top: '0px', right: '0px' }}>
+                                -10
+                            </div>
+                        ))}
+
+                        <div className="mizige relative overflow-hidden rounded-md bg-white cursor-crosshair writing-canvas-container"
+                             style={{ width: `${boxSize}px`, height: `${boxSize}px` }}>
+                            <div ref={boxRef} className="absolute inset-0 w-full h-full flex justify-center items-center svg-container"></div>
+                            {status === 'scoring' && (
+                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none fade-in z-20">
+                                    <div className="border-4 border-red-500 rounded-full flex items-center justify-center transform -rotate-12 bg-white/80 backdrop-blur-sm shadow-lg"
+                                         style={{ width: `${boxSize * 0.7}px`, height: `${boxSize * 0.7}px` }}>
+                                        <div className="text-center"><span className="block text-red-600 font-bold font-serif" style={{ fontSize: `${boxSize * 0.35}px` }}>{localScore}</span></div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // -----------------------
+        // 寫字練習區塊
+        // -----------------------
+        const WordPractice = ({ wordData, onWordComplete }) => {
+            const chars = wordData.word.split('');
+            const [resetSignal, setResetSignal] = useState(0);
+            const [scores, setScores] = useState({});
+            const [completedIndices, setCompletedIndices] = useState(new Set());
+
+            const handleScoreChangeIndexed = (index, score) => setScores(p => ({ ...p, [index]: score }));
+            const handleCharComplete = (index) => {
+                setCompletedIndices(p => {
+                    const n = new Set(p); n.add(index);
+                    if (n.size === chars.length) onWordComplete(true);
+                    return n;
+                });
+            };
+            const calculateAverage = () => {
+                const total = Object.values(scores).reduce((a, b) => a + b, 0);
+                return chars.length === 0 ? 0 : Math.round(total / chars.length);
+            };
+
+            useEffect(() => { const i = {}; chars.forEach((_, x) => i[x] = 100); setScores(i); setCompletedIndices(new Set()); }, [wordData]);
+
+            return (
+                <div className="flex flex-col items-center w-full">
+                    <div className="w-full flex justify-between items-center bg-white/90 px-4 py-2 rounded-xl mb-2 border-2 border-amber-200">
+                         <span className="text-sm text-amber-700 font-bold">目前總分</span>
+                         <span className="text-2xl font-bold text-amber-900 font-mono">{calculateAverage()}</span>
+                    </div>
+                    
+                    <div className="flex flex-wrap justify-center gap-0.5 md:gap-3 mb-2 w-full">
+                        {chars.map((char, index) => (
+                            <CharacterBox key={`${wordData.id}-${index}-${char}`} char={char} 
+                                onScoreChange={(c, s) => handleScoreChangeIndexed(index, s)} onComplete={() => handleCharComplete(index)} />
+                        ))}
+                    </div>
+                    <div className="flex gap-2">
+                        <button onClick={() => { setResetSignal(p => p + 1); const i = {}; chars.forEach((_, x) => i[x] = 100); setScores(i); setCompletedIndices(new Set()); onWordComplete(false); }}
+                            className="px-4 py-2 rounded-xl text-md font-bold transition shadow-sm bg-gray-100 text-gray-600 hover:bg-gray-200 border-2 border-gray-200">
+                            重寫 (Reset)
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // -----------------------
+        // 主應用程式
+        // -----------------------
+        const App = () => {
+            const [playerName, setPlayerName] = useState('');
+            const [inputName, setInputName] = useState('');
+            const [currentUnit, setCurrentUnit] = useState(null); 
+            const [mode, setMode] = useState('welcome'); 
+            const [currentIndex, setCurrentIndex] = useState(0);
+            const [score, setScore] = useState(0);
+            const [showResult, setShowResult] = useState(false);
+            const [feedback, setFeedback] = useState(null); 
+            const [quizOptions, setQuizOptions] = useState([]);
+            const [canProceed, setCanProceed] = useState(false);
+            const [audioSpeed, setAudioSpeed] = useState(1); 
+            const [isSpeaking, setIsSpeaking] = useState(false);
+            const [showDemoModal, setShowDemoModal] = useState(false);
+            
+            const shuffleArray = (array) => [...array].sort(() => Math.random() - 0.5);
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (inputName.trim()) {
+                    setPlayerName(inputName.trim());
+                    setMode('unit_select');
+                }
+            };
+
+            const handleUnitSelect = (unit) => {
+                if (unit.words.length === 0) { alert("此課堂內容尚未更新，請稍後再來！"); return; }
+                setCurrentUnit(unit);
+                setMode('menu');
+            };
+
+            const startStudy = () => { 
+                setMode('study'); setCurrentIndex(0); setCanProceed(false); setShowDemoModal(true); 
+            };
+            
+            const startQuiz = () => { setMode('quiz'); setScore(0); setCurrentIndex(0); setShowResult(false); prepareQuizRound(0); };
+
+            const prepareQuizRound = (index) => {
+                if (!currentUnit) return;
+                const vocabList = currentUnit.words;
+                if (index >= vocabList.length) { setShowResult(true); return; }
+                const correctWord = vocabList[index];
+                let options = vocabList.filter(v => v.id !== correctWord.id);
+                if (options.length > 3) options = shuffleArray(options).slice(0, 3);
+                options.push(correctWord);
+                setQuizOptions(shuffleArray(options));
+            };
+
+            const handleQuizAnswer = (selectedWord) => {
+                if (!currentUnit) return;
+                const currentWord = currentUnit.words[currentIndex];
+                if (selectedWord.id === currentWord.id) {
+                    setScore(score + 10);
+                    setFeedback('correct');
+                } else {
+                    setFeedback('wrong');
+                }
+                setTimeout(() => {
+                    setFeedback(null);
+                    const nextIndex = currentIndex + 1;
+                    setCurrentIndex(nextIndex);
+                    prepareQuizRound(nextIndex);
+                }, 1000);
+            };
+
+            const playCantonese = (text) => {
+                if (!window.speechSynthesis) return;
+                window.speechSynthesis.cancel();
+                setIsSpeaking(true);
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'zh-HK'; utterance.rate = audioSpeed; 
+                const voices = window.speechSynthesis.getVoices();
+                const cantoneseVoice = voices.find(v => v.lang === 'zh-HK' || v.name.includes('Cantonese'));
+                if (cantoneseVoice) utterance.voice = cantoneseVoice;
+                utterance.onend = () => setIsSpeaking(false);
+                window.speechSynthesis.speak(utterance);
+            };
+
+            useEffect(() => { if (window.speechSynthesis) window.speechSynthesis.getVoices(); }, []);
+
+            const getResultFeedback = (finalScore, totalScore) => {
+                const percentage = (finalScore / totalScore) * 100;
+                if (percentage >= 100) return { text: "完美！你是詞語大師！", emoji: "🌟🏆💯" };
+                if (percentage >= 80) return { text: "太棒了！做得很好！", emoji: "🎉✨😊" };
+                if (percentage >= 60) return { text: "不錯喔！繼續加油！", emoji: "💪👍" };
+                return { text: "別氣餒，多練習會更好的！", emoji: "📚🔥" };
+            };
+
+            // 0. 歡迎登入頁
+            if (mode === 'welcome') {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                        <div className="bg-white/90 p-8 rounded-3xl shadow-xl w-full max-w-sm border-4 border-amber-200">
+                            <div className="w-48 h-48 bg-gray-200 rounded-full mx-auto mb-6 flex items-center justify-center overflow-hidden border-4 border-amber-300 relative">
+                                <img src="./profile.jpg" onError={(e) => { e.target.onerror = null; e.target.src = "https://ui-avatars.com/api/?name=Ms+Ni&background=fcd34d&color=fff&size=128"; }} alt="Ms. Ni" className="w-full h-full object-cover" />
+                            </div>
+                            <h1 className="text-6xl text-amber-900 calligraphy-font text-center mb-2">詞語大師</h1>
+                            <h3 className="text-3xl text-amber-600 font-bold text-center mb-8">Ms. Ni 的課堂</h3>
+                            <form onSubmit={handleLogin} className="space-y-6">
+                                <input type="text" value={inputName} onChange={(e) => setInputName(e.target.value)} placeholder="輸入你的名字" className="w-full px-6 py-4 text-2xl rounded-2xl border-2 border-amber-200 focus:outline-none bg-amber-50/80 text-amber-900 text-center" required />
+                                <button type="submit" className="w-full bg-amber-500 hover:bg-amber-600 text-white text-2xl py-4 rounded-2xl font-bold shadow-md active:scale-95">開始遊戲</button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 1. 課堂選擇頁
+            if (mode === 'unit_select') {
+                return (
+                    <div className="min-h-screen flex flex-col items-center p-4">
+                        <div className="w-full max-w-md animate-bounce-in relative">
+                            <button onClick={() => setMode('welcome')} className="absolute -top-14 left-0 text-amber-900 font-bold flex items-center gap-1 bg-white/80 px-4 py-2 rounded-xl text-lg shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                                登出
+                            </button>
+                            <h2 className="text-4xl text-amber-900 calligraphy-font text-center mb-2 drop-shadow-sm mt-4">請選擇課堂</h2>
+                            <p className="text-xl text-center text-amber-700 font-bold mb-8 drop-shadow-sm">你好，{playerName}</p>
+                            <div className="space-y-6">
+                                {UNIT_DATA.map(unit => (
+                                    <button key={unit.id} onClick={() => handleUnitSelect(unit)} className={`w-full p-8 rounded-3xl shadow-lg border-2 text-left flex flex-col gap-2 transition transform ${unit.words.length === 0 ? 'bg-gray-100 border-gray-200 opacity-70 cursor-not-allowed' : 'bg-white/90 border-amber-200 hover:scale-105'}`}>
+                                        <div className="flex justify-between items-center"><span className="text-3xl font-bold text-amber-900">{unit.title}</span>{unit.words.length === 0 && <span className="text-sm bg-gray-300 text-gray-600 px-3 py-1 rounded-lg">即將推出</span>}</div>
+                                        {unit.subtitle && <span className="text-xl text-amber-700 font-bold">{unit.subtitle}</span>}
+                                        <span className="text-lg text-gray-500">{unit.description}</span>
+                                    </button>
+                                ))}
+                            </div>
+                            <button onClick={() => setMode('welcome')} className="w-full mt-10 py-4 bg-gray-100/90 text-gray-600 rounded-2xl font-bold text-xl flex items-center justify-center gap-2 hover:opacity-80 transition shadow-md">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                                返回首頁 (Back)
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 2. 選單介面
+            if (mode === 'menu') {
+                return (
+                    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                        <div className="text-center w-full max-w-md animate-bounce-in relative">
+                            <button onClick={() => setMode('unit_select')} className="absolute -top-20 left-0 text-amber-900 font-bold flex items-center gap-1 bg-white/80 px-4 py-2 rounded-xl text-lg shadow-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                                返回課堂列表
+                            </button>
+                            <h1 className="text-5xl text-amber-900 font-bold mb-2 drop-shadow-sm">{currentUnit.title}</h1>
+                            <h2 className="text-6xl text-amber-900 calligraphy-font mb-6 drop-shadow-sm">{currentUnit.subtitle}</h2>
+                            <p className="text-2xl text-amber-900 mb-10 drop-shadow-sm">{currentUnit.description}</p>
+                            <div className="space-y-6">
+                                <button onClick={startStudy} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white text-3xl py-6 rounded-3xl shadow-xl active:scale-95 font-bold flex items-center justify-center gap-3">寫字道場 <span className="text-xl opacity-70">(Writing)</span></button>
+                                <button onClick={startQuiz} className="w-full bg-amber-500 hover:bg-amber-600 text-white text-3xl py-6 rounded-3xl shadow-xl active:scale-95 font-bold flex items-center justify-center gap-3">詞義挑戰 <span className="text-xl opacity-70">(Quiz)</span></button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // 3. 寫字練習模式
+            if (mode === 'study') {
+                const vocabList = currentUnit.words;
+                const wordData = vocabList[currentIndex];
+                return (
+                    <div className="h-screen flex flex-col overflow-hidden relative">
+                        {showDemoModal && (
+                            <StrokeOrderDemoModal 
+                                word={wordData.word} 
+                                onClose={() => setShowDemoModal(false)}
+                            />
+                        )}
+
+                        <div className="flex justify-between items-center px-4 py-3 bg-white/90 shadow-md shrink-0 z-10">
+                            <button onClick={() => setMode('menu')} className="text-amber-700 font-bold text-xl flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-xl">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                退出
+                            </button>
+                            <span className="text-2xl font-bold text-amber-900">{currentIndex + 1} / {vocabList.length}</span>
+                            <div className="w-20"></div>
+                        </div>
+                        
+                        <div className="flex-1 p-2 flex items-center justify-center overflow-hidden">
+                            <div className="w-full h-full bg-white/90 rounded-2xl shadow-2xl p-4 md:p-6 flex flex-col overflow-y-auto">
+                                <div className="flex flex-col lg:flex-row gap-6 flex-1">
+                                    <div className="w-full lg:w-[35%] flex flex-col gap-4 justify-center">
+                                        <div className="flex items-center justify-between md:justify-start gap-4">
+                                            <h2 className="text-5xl md:text-5xl font-bold text-amber-900">{wordData.word}</h2>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => playCantonese(wordData.word)} className={`p-3 rounded-full ${isSpeaking ? 'bg-amber-400' : 'bg-gray-100'} hover:bg-amber-200 transition`}>
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+                                                </button>
+                                                <button onClick={() => setAudioSpeed(audioSpeed === 1 ? 0.5 : 1)} className="px-3 py-1 text-sm font-bold rounded-lg border-2 border-gray-200 bg-gray-50 text-gray-600">{audioSpeed === 1 ? '正常' : '慢速'}</button>
+                                            </div>
+                                        </div>
+                                        <div className="text-xl font-bold text-amber-800 bg-amber-50 px-3 py-2 rounded-xl w-fit">粵: {wordData.jyutping}</div>
+                                        <div className="text-lg text-gray-700 bg-gray-50 border-gray-200 border-2 p-3 rounded-xl"><span className="font-bold block text-xs text-gray-400 uppercase mb-1">Meaning</span>{wordData.meaning}</div>
+                                        <div className="text-lg text-indigo-700 bg-indigo-50 border-indigo-200 border-2 p-3 rounded-xl"><span className="font-bold block text-xs text-indigo-300 uppercase mb-1">English</span>{wordData.english_meaning}</div>
+                                    </div>
+                                    <div className="w-full lg:w-[65%] border-t-2 lg:border-t-0 lg:border-l-2 border-gray-100 pt-6 lg:pt-0 lg:pl-6 flex flex-col justify-center">
+                                        <WordPractice wordData={wordData} onWordComplete={setCanProceed} key={wordData.id} />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="shrink-0 p-4 bg-white/95 border-t-2 border-amber-200 flex justify-between items-center gap-6 z-20">
+                            <button onClick={() => { setCurrentIndex(Math.max(0, currentIndex - 1)); setCanProceed(false); setShowDemoModal(true); }} disabled={currentIndex === 0} className={`px-6 py-5 rounded-2xl font-bold text-xl ${currentIndex === 0 ? 'bg-gray-100 text-gray-300' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>上一個</button>
+                            <button onClick={() => { if (currentIndex < vocabList.length - 1) { setCurrentIndex(currentIndex + 1); setCanProceed(false); setShowDemoModal(true); } else { setMode('menu'); } }}
+                                disabled={!canProceed} className={`flex-1 py-5 rounded-2xl font-bold shadow-lg transition text-2xl flex justify-center items-center gap-3 ${canProceed ? 'bg-amber-500 hover:bg-amber-600 text-white active:scale-95' : 'bg-gray-200 text-gray-400'}`}>
+                                {!canProceed && "🔒 "} {currentIndex === vocabList.length - 1 ? '完成練習' : '下一個'}
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (mode === 'quiz') {
+                const vocabList = currentUnit.words;
+                if (showResult) {
+                    const totalPossibleScore = vocabList.length * 10;
+                    const feedbackData = getResultFeedback(score, totalPossibleScore);
+                    return (
+                        <div className="min-h-screen flex flex-col items-center justify-center p-4">
+                            <div className="bg-white/95 p-10 rounded-[2rem] shadow-2xl text-center w-full max-w-lg border-4 border-amber-200 animate-bounce-in">
+                                <h2 className="text-4xl font-bold text-amber-900 mb-2">{currentUnit.title} 挑戰完成！</h2>
+                                <p className="text-2xl text-amber-700 font-bold mb-8">{playerName}</p>
+                                <div className="mb-10">
+                                    <div className="text-8xl mb-4">{feedbackData.emoji}</div>
+                                    <div className="text-7xl font-bold text-amber-900 mb-2">{score} 分</div>
+                                    <div className="text-gray-500 text-xl">滿分：{totalPossibleScore}</div>
+                                </div>
+                                <div className="bg-amber-50 p-6 rounded-2xl mb-10"><p className="text-amber-900 font-bold text-2xl">{feedbackData.text}</p></div>
+                                <button onClick={() => setMode('menu')} className="w-full bg-amber-500 hover:bg-amber-600 text-white text-3xl py-6 rounded-3xl font-bold shadow-lg transform transition active:scale-95">返回課堂選單</button>
+                            </div>
+                        </div>
+                    );
+                }
+                const currentWord = vocabList[currentIndex];
+                return (
+                    <div className="h-screen flex flex-col">
+                        <div className="flex justify-between items-center px-4 py-3 bg-white/90 shadow-md shrink-0 z-10">
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => setMode('menu')} className="text-amber-700 font-bold text-xl flex items-center gap-2 bg-amber-50 px-4 py-2 rounded-xl">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                                    退出
+                                </button>
+                                <span className="bg-orange-100 text-orange-800 px-4 py-2 rounded-xl text-xl font-bold">Q {currentIndex + 1}</span>
+                            </div>
+                            <span className="font-bold text-amber-900 text-xl">Score: {score}</span>
+                        </div>
+                        <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-y-auto">
+                            <div className="w-full max-w-lg bg-white/95 rounded-3xl shadow-2xl p-8 border-4 border-amber-100">
+                                <h3 className="text-4xl text-amber-900 leading-relaxed mb-4 text-center font-bold">
+                                    {currentWord.sentence.split('____').map((part, i) => (<span key={i}>{part}{i === 0 && <span className="inline-block w-24 border-b-4 border-orange-400 mx-2 text-transparent">?</span>}</span>))}
+                                </h3>
+                                <p className="text-xl text-gray-500 text-center mb-8 bg-gray-50 py-2 rounded-lg">Hint: {currentWord.english_meaning}</p>
+                                <div className="grid grid-cols-1 gap-4">
+                                    {quizOptions.map((option) => (
+                                        <button key={option.id} onClick={() => !feedback && handleQuizAnswer(option)} disabled={!!feedback} className={`p-6 text-3xl font-bold rounded-2xl border-4 transition flex items-center justify-center gap-4 shadow-sm ${feedback ? (option.id === currentWord.id ? 'bg-green-500 border-green-500 text-white' : 'bg-gray-100 text-gray-400') : 'bg-white border-amber-200 hover:border-amber-400 hover:bg-amber-50 text-amber-900'}`}>
+                                            {option.emoji && <span className="text-4xl">{option.emoji}</span>} {option.word}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+            return null;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
